@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sign Language Recognition</title>
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        #video {
+            width: 640px;
+            height: 480px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+        }
+        #prediction {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        #status {
+            color: #666;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Sign Language Recognition</h1>
+        <div id="status">Connecting...</div>
+        <video id="video" autoplay></video>
+        <div id="prediction">Prediction: <span id="pred-text">waiting...</span></div>
+        <canvas id="hidden-canvas" style="display: none;"></canvas>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const hiddenCanvas = document.getElementById('hidden-canvas');
+        const ctx = hiddenCanvas.getContext('2d');
+        const predText = document.getElementById('pred-text');
+        const statusDiv = document.getElementById('status');
+        let ws = null;
+        let isConnected = false;
+
+        // Set up video stream
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                video.srcObject = stream;
+                hiddenCanvas.width = 640;
+                hiddenCanvas.height = 480;
+                return true;
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                statusDiv.textContent = 'Error accessing camera';
+                return false;
+            }
+        }
+
+        // Connect to WebSocket server
+        function connectWebSocket() {
+            ws = new WebSocket('ws://localhost:8080');
+
+            ws.onopen = () => {
+                console.log('Connected to server');
+                statusDiv.textContent = 'Connected';
+                isConnected = true;
+            };
+
+            ws.onclose = () => {
+                console.log('Disconnected from server');
+                statusDiv.textContent = 'Disconnected - Reconnecting...';
+                isConnected = false;
+                setTimeout(connectWebSocket, 3000);  // Reconnect after 3 seconds
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                statusDiv.textContent = 'Connection error';
+            };
+
+            ws.onmessage = (event) => {
+                const response = JSON.parse(event.data);
+                predText.textContent = `${response.prediction} (${(response.confidence * 100).toFixed(1)}%)`;
+            };
+        }
+
+        // Send frame to server
+        function sendFrame() {
+            if (isConnected) {
+                ctx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
+                const frameData = hiddenCanvas.toDataURL('image/jpeg', 0.8);
+                ws.send(frameData);
+            }
+        }
+
+        // Initialize everything
+        async function init() {
+            const cameraReady = await setupCamera();
+            if (cameraReady) {
+                connectWebSocket();
+                // Send frames every 100ms (adjust as needed)
+                setInterval(sendFrame, 100);
+            }
+        }
+
+        // Start when page loads
+        window.onload = init;
+    </script>
+</body>
+</html>
